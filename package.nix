@@ -31,13 +31,15 @@ let
 
   # Sure's Gemfile uses `ruby file: ".ruby-version"` which requires the file to
   # be co-located with the Gemfile.  Since bundlerEnv's gemfile-and-lockfile
-  # derivation only copies Gemfile + Gemfile.lock, we inline the version here.
-  # We patch to the actual nixpkgs Ruby version (e.g. 3.4.8) rather than the
-  # upstream .ruby-version (3.4.7) so Bundler's strict version check passes.
+  # derivation only copies Gemfile + Gemfile.lock, we remove the ruby-version
+  # directive entirely.  nixpkgs provides ruby_3_4 = 3.4.8 but upstream pins
+  # 3.4.7; the two-way mismatch (validate_ruby! vs frozen-mode lockfile check)
+  # means neither patching to 3.4.7 nor 3.4.8 works — removing the directive
+  # tells Bundler to skip the version check altogether.
   patchedGemfile = builtins.toFile "Gemfile"
     (lib.replaceStrings
-      [ "ruby file: \".ruby-version\"" ]
-      [ "ruby \"${ruby.version}\"" ]
+      [ "ruby file: \".ruby-version\"\n" ]
+      [ "" ]
       (builtins.readFile ./Gemfile));
 
   # bundlerEnv reads Gemfile, Gemfile.lock, and gemset.nix from gemdir.
@@ -75,7 +77,7 @@ stdenv.mkDerivation {
   # (which set BUNDLE_GEMFILE=$appDir/Gemfile) don't require .ruby-version.
   patchPhase = ''
     runHook prePatch
-    sed -i 's|ruby file: "\.ruby-version"|ruby "${ruby.version}"|' Gemfile
+    sed -i '/ruby file: "\.ruby-version"/d' Gemfile
     runHook postPatch
   '';
 
