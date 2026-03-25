@@ -122,11 +122,12 @@ stdenv.mkDerivation {
     chmod +x "$TWDIR/exe/aarch64-linux-gnu/tailwindcss"
     # The prebuilt binary uses the standard glibc ELF interpreter path
     # (/lib/ld-linux-aarch64.so.1) which does not exist on NixOS.
-    # Patch the interpreter and rpath so the binary runs in the sandbox.
+    # Patch the interpreter; supply glibc via LD_LIBRARY_PATH rather than
+    # --set-rpath to avoid corrupting the binary's existing dynamic section.
     patchelf \
       --set-interpreter "${glibc}/lib/ld-linux-aarch64.so.1" \
-      --set-rpath "${glibc}/lib" \
       "$TWDIR/exe/aarch64-linux-gnu/tailwindcss"
+    export LD_LIBRARY_PATH="${glibc}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     # tailwindcss-ruby with TAILWINDCSS_INSTALL_DIR looks for
     # $TAILWINDCSS_INSTALL_DIR/tailwindcss directly.
     export TAILWINDCSS_INSTALL_DIR="$TWDIR/exe/aarch64-linux-gnu"
