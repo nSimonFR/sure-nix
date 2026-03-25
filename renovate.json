@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "nix": {
+    "enabled": true
+  },
+  "customManagers": [
+    {
+      "description": "Track Sure upstream releases in package.nix",
+      "customType": "regex",
+      "fileMatch": ["^package\\.nix$"],
+      "matchStrings": [
+        "version\\s*=\\s*\"(?<currentValue>[^\"]+)\";"
+      ],
+      "depNameTemplate": "we-promise/sure",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v?(?<version>.*)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Group flake input updates",
+      "matchManagers": ["nix"],
+      "groupName": "flake inputs",
+      "schedule": ["every weekend"]
+    },
+    {
+      "description": "Sure upstream releases",
+      "matchDepNames": ["we-promise/sure"],
+      "automerge": false,
+      "schedule": ["at any time"]
+    }
+  ]
+}
