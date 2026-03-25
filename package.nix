@@ -34,6 +34,8 @@ let
     name = "${pname}-${version}-gems";
     inherit ruby;
     gemdir = ./.;
+    # .ruby-version must be co-located with Gemfile; Sure's Gemfile has `ruby file: ".ruby-version"`
+    extraConfigPaths = [ ./.ruby-version ];
     # Gems with native extensions need their build inputs declared here.
     nativeBuildInputs = [ pkg-config ];
     buildInputs = [ libxml2 libxslt libffi zlib openssl postgresql ];
