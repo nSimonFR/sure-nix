@@ -9,7 +9,7 @@
   lib,
   stdenv,
   fetchFromGitHub,
-  ruby,
+  ruby_3_4,       # Sure requires Ruby 3.4.x (.ruby-version: 3.4.7; nixpkgs provides 3.4.8)
   bundlerEnv,
   defaultGemConfig,
   nodejs,
@@ -25,6 +25,7 @@
 }:
 
 let
+  ruby = ruby_3_4;
   pname = "sure";
   version = "0.6.8";
 
