@@ -38,6 +38,15 @@ cp "$CLONEDIR/sure/.ruby-version"  "$FLAKE_DIR/.ruby-version"
 echo "==> Stripping RUBY VERSION section from Gemfile.lock..."
 perl -0777 -i -pe 's/\nRUBY VERSION\n   ruby [^\n]+\n//' "$FLAKE_DIR/Gemfile.lock"
 
+# bundlerEnv builds source gems; BUNDLE_FORCE_RUBY_PLATFORM=1 tells bundler
+# to select the ruby-platform variant.  Bundler then validates that "ruby"
+# is listed in the lockfile's PLATFORMS section — add it if absent.
+echo "==> Ensuring 'ruby' platform is in Gemfile.lock PLATFORMS..."
+if ! grep -q "^  ruby$" "$FLAKE_DIR/Gemfile.lock"; then
+  # Insert "  ruby" after the last platform entry before DEPENDENCIES
+  perl -i -pe 's/^(DEPENDENCIES)$/  ruby\n\n$1/' "$FLAKE_DIR/Gemfile.lock"
+fi
+
 echo "==> Running bundix (with nil-fix) to generate gemset.nix..."
 
 # Resolve bundix from the system nix store (fast — uses cached build).
