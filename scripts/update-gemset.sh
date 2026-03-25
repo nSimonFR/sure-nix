@@ -46,6 +46,25 @@ chmod +x "$RUNSCRIPT"
 
 (cd "$FLAKE_DIR" && "$RUNSCRIPT")
 
+echo "==> Fixing platform-specific gem hashes in gemset.nix..."
+# bundix on aarch64 hashes platform gems (e.g. ffi-1.17.2-aarch64-linux-gnu.gem)
+# but bundlerEnv downloads and verifies the source gem (ffi-1.17.2.gem).
+# Post-process gemset.nix: replace each platform gem's hash with the source gem hash.
+while IFS= read -r line; do
+  GEM="$(echo "$line" | grep -oP '^\s+\K[a-zA-Z0-9_-]+')"
+  [ -z "$GEM" ] && continue
+  # Get version from gemset.nix (the source/non-platform entry)
+  GEM_VERSION="$(grep -A6 "^  ${GEM} = {" "$FLAKE_DIR/gemset.nix" | grep 'version =' | grep -oP '"[^"]+"' | tr -d '"')"
+  [ -z "$GEM_VERSION" ] && continue
+  CORRECT_HASH="$(nix-prefetch-url --type sha256 "https://rubygems.org/gems/${GEM}-${GEM_VERSION}.gem" 2>/dev/null)"
+  [ -z "$CORRECT_HASH" ] && continue
+  # Replace the sha256 in the gem's block
+  OLD_HASH="$(grep -A6 "^  ${GEM} = {" "$FLAKE_DIR/gemset.nix" | grep 'sha256 =' | grep -oP '"[^"]+"' | tr -d '"')"
+  [ -z "$OLD_HASH" ] || [ "$OLD_HASH" = "$CORRECT_HASH" ] && continue
+  echo "    ${GEM} ${GEM_VERSION}: ${OLD_HASH} → ${CORRECT_HASH}"
+  sed -i "s/${OLD_HASH}/${CORRECT_HASH}/" "$FLAKE_DIR/gemset.nix"
+done < <(grep "aarch64-linux-gnu\|aarch64-linux-musl" "$FLAKE_DIR/Gemfile.lock" | grep -oP '^\s+\K[a-zA-Z0-9_-]+' | sort -u)
+
 echo "==> Computing src hash for package.nix..."
 HASH="$(nix run nixpkgs#nix-prefetch-github -- \
   --rev "v${VERSION}" "$OWNER" "$REPO" 2>/dev/null | \
