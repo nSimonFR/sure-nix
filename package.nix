@@ -28,14 +28,25 @@ let
   pname = "sure";
   version = "0.6.8";
 
+  # Sure's Gemfile uses `ruby file: ".ruby-version"` which requires the file to
+  # be co-located with the Gemfile.  Since bundlerEnv's gemfile-and-lockfile
+  # derivation only copies Gemfile + Gemfile.lock, we inline the version here.
+  rubyVersion = lib.removeSuffix "\n" (builtins.readFile ./.ruby-version);
+
+  patchedGemfile = builtins.toFile "Gemfile"
+    (lib.replaceStrings
+      [ "ruby file: \".ruby-version\"" ]
+      [ "ruby \"${rubyVersion}\"" ]
+      (builtins.readFile ./Gemfile));
+
   # bundlerEnv reads Gemfile, Gemfile.lock, and gemset.nix from gemdir.
   # These files must be co-located with package.nix in this flake.
   gems = bundlerEnv {
     name = "${pname}-${version}-gems";
     inherit ruby;
-    gemdir = ./.;
-    # .ruby-version must be co-located with Gemfile; Sure's Gemfile has `ruby file: ".ruby-version"`
-    extraConfigPaths = [ ./.ruby-version ];
+    gemfile  = patchedGemfile;
+    lockfile = ./Gemfile.lock;
+    gemset   = ./gemset.nix;
     # Gems with native extensions need their build inputs declared here.
     nativeBuildInputs = [ pkg-config ];
     buildInputs = [ libxml2 libxslt libffi zlib openssl postgresql ];
@@ -58,6 +69,14 @@ stdenv.mkDerivation {
 
   nativeBuildInputs = [ makeWrapper nodejs ];
   buildInputs = [ gems ruby ];
+
+  # Patch the app source Gemfile to inline the ruby version so runtime wrappers
+  # (which set BUNDLE_GEMFILE=$appDir/Gemfile) don't require .ruby-version.
+  patchPhase = ''
+    runHook prePatch
+    sed -i 's|ruby file: "\.ruby-version"|ruby "${rubyVersion}"|' Gemfile
+    runHook postPatch
+  '';
 
   # Rails 7+ requires SECRET_KEY_BASE for asset precompilation.
   # A dummy value is safe here; the real one is only needed at runtime.
