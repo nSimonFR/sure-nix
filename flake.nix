@@ -13,10 +13,11 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [ "x86_64-linux" "aarch64-linux" ];
 
-      perSystem = { pkgs, system, ... }: {
-        packages.default = pkgs.callPackage ./package.nix { };
-        packages.sure    = pkgs.callPackage ./package.nix { };
-      };
+      perSystem = { pkgs, system, ... }:
+        let sure = pkgs.callPackage ./package.nix { }; in {
+          packages.sure    = sure;
+          packages.default = sure;
+        };
 
       flake = {
         nixosModules.sure    = import ./module.nix self;

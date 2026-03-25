@@ -33,8 +33,8 @@ cp "$CLONEDIR/sure/.ruby-version"  "$FLAKE_DIR/.ruby-version"
 # Bundler in frozen mode rejects any Gemfile/lockfile mismatch: patching the
 # Gemfile to match either version triggers either validate_ruby! or the frozen
 # lockfile-update guard.  Removing the RUBY VERSION section from the lockfile
-# (and the `ruby` directive from the Gemfile via patchedGemfile/patchPhase in
-# package.nix) tells Bundler to skip the version check entirely.
+# (and the `ruby` directive from the Gemfile via patchedGemfile in package.nix)
+# tells Bundler to skip the version check entirely.
 # bundlerEnv builds source gems (ruby platform); add the ruby platform to the
 # lockfile so BUNDLE_FORCE_RUBY_PLATFORM=1 can select ruby-platform variants.
 # This also adds source gem entries (e.g. tailwindcss-ruby (4.1.8)) for gems
@@ -60,7 +60,7 @@ WRAPPER="$BUNDIX_STORE/bin/.bundix-wrapped"
 # The original ends with: load Gem.activate_bin_path("bundix", "bundix", "2.5.0")
 # We split that into: activate → require bundix → prepend nil-fix → load binary.
 RUNSCRIPT="$(mktemp --suffix=.rb)"
-trap 'rm -f "$RUNSCRIPT"' RETURN
+trap 'rm -f "$RUNSCRIPT"' EXIT
 sed 's|^load Gem\.activate_bin_path\(.*\)$|BUNDIX_BIN__ = Gem.activate_bin_path\1; require "bundix"; Bundix::Nixer.prepend(Module.new { def serialize; obj.nil? ? "null" : super; end }); ENV["BUNDLE_FORCE_RUBY_PLATFORM"] = "1"; load BUNDIX_BIN__|' \
   "$WRAPPER" > "$RUNSCRIPT"
 chmod +x "$RUNSCRIPT"

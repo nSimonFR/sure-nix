@@ -34,12 +34,27 @@ let
   version = "0.6.8";
 
   # tailwindcss-ruby (source gem) ships no binary; it looks for the Tailwind CLI
-  # in its exe/ dir, falling back to TAILWINDCSS_INSTALL_DIR.  Fetch the aarch64
-  # platform gem to extract the binary for use during asset precompilation.
-  # Hash: nix-prefetch-url https://rubygems.org/gems/tailwindcss-ruby-4.1.8-aarch64-linux-gnu.gem
+  # in its exe/ dir, falling back to TAILWINDCSS_INSTALL_DIR.  Fetch the matching
+  # platform gem to extract the Bun-bundled binary for asset precompilation.
+  # To update: nix-prefetch-url https://rubygems.org/gems/tailwindcss-ruby-<VER>-<PLATFORM>.gem
+  twVersion = "4.1.8";
+
+  twPlatformInfo = {
+    "aarch64-linux" = {
+      gemPlatform = "aarch64-linux-gnu";
+      sha256      = "17b983ag5ffvsmsrvdaqmy4z6w9zrdvqj73fxpsbdmrdfshfbc5k";
+      ldSo        = "ld-linux-aarch64.so.1";
+    };
+    "x86_64-linux" = {
+      gemPlatform = "x86_64-linux-gnu";
+      sha256      = "048k95b39v6iy519xxs2jm3k272ry1cmx58vq5fx55qf2vkb5324";
+      ldSo        = "ld-linux-x86-64.so.2";
+    };
+  }.${stdenv.hostPlatform.system};
+
   tailwindcssGem = fetchurl {
-    url    = "https://rubygems.org/gems/tailwindcss-ruby-4.1.8-aarch64-linux-gnu.gem";
-    sha256 = "17b983ag5ffvsmsrvdaqmy4z6w9zrdvqj73fxpsbdmrdfshfbc5k";
+    url    = "https://rubygems.org/gems/tailwindcss-ruby-${twVersion}-${twPlatformInfo.gemPlatform}.gem";
+    sha256 = twPlatformInfo.sha256;
   };
 
   # Sure's Gemfile uses `ruby file: ".ruby-version"` which requires the file to
@@ -86,14 +101,6 @@ stdenv.mkDerivation {
   nativeBuildInputs = [ makeWrapper nodejs patchelf ];
   buildInputs = [ gems ruby ];
 
-  # Patch the app source Gemfile to inline the ruby version so runtime wrappers
-  # (which set BUNDLE_GEMFILE=$appDir/Gemfile) don't require .ruby-version.
-  patchPhase = ''
-    runHook prePatch
-    sed -i '/ruby file: "\.ruby-version"/d' Gemfile
-    runHook postPatch
-  '';
-
   # Rails 7+ requires SECRET_KEY_BASE for asset precompilation.
   # A dummy value is safe here; the real one is only needed at runtime.
   buildPhase = ''
@@ -110,28 +117,19 @@ stdenv.mkDerivation {
 
     # tailwindcss-ruby source gem has no binary; extract from the platform gem
     # and point TAILWINDCSS_INSTALL_DIR at it for the asset compilation step.
+    # Extract the platform gem and patch the Bun-bundled binary for NixOS.
+    # The binary uses /lib/ld-linux-*.so.* which doesn't exist on NixOS;
+    # patch the interpreter and supply glibc + libstdc++ via LD_LIBRARY_PATH.
     TWDIR=$TMPDIR/tailwindcss
     mkdir -p "$TWDIR"
-    echo "==> Extracting tailwindcss platform gem to $TWDIR"
     tar -xf ${tailwindcssGem} -C "$TWDIR"
-    ls -la "$TWDIR/"
-    echo "==> Extracting data.tar.gz"
     tar -xzf "$TWDIR/data.tar.gz" -C "$TWDIR"
-    ls -la "$TWDIR/exe/" || true
-    ls -la "$TWDIR/exe/aarch64-linux-gnu/" || true
-    chmod +x "$TWDIR/exe/aarch64-linux-gnu/tailwindcss"
-    # The prebuilt binary uses the standard glibc ELF interpreter path
-    # (/lib/ld-linux-aarch64.so.1) which does not exist on NixOS.
-    # Patch the interpreter; supply glibc via LD_LIBRARY_PATH rather than
-    # --set-rpath to avoid corrupting the binary's existing dynamic section.
+    chmod +x "$TWDIR/exe/${twPlatformInfo.gemPlatform}/tailwindcss"
     patchelf \
-      --set-interpreter "${glibc}/lib/ld-linux-aarch64.so.1" \
-      "$TWDIR/exe/aarch64-linux-gnu/tailwindcss"
-    # Bun-bundled tailwindcss needs glibc (libc.so.6 etc.) and libstdc++.so.6
+      --set-interpreter "${glibc}/lib/${twPlatformInfo.ldSo}" \
+      "$TWDIR/exe/${twPlatformInfo.gemPlatform}/tailwindcss"
     export LD_LIBRARY_PATH="${glibc}/lib:${stdenv.cc.cc.lib}/lib"
-    # tailwindcss-ruby with TAILWINDCSS_INSTALL_DIR looks for
-    # $TAILWINDCSS_INSTALL_DIR/tailwindcss directly.
-    export TAILWINDCSS_INSTALL_DIR="$TWDIR/exe/aarch64-linux-gnu"
+    export TAILWINDCSS_INSTALL_DIR="$TWDIR/exe/${twPlatformInfo.gemPlatform}"
 
     # Precompile assets into public/assets
     bundle exec rails assets:precompile
