@@ -127,7 +127,8 @@ stdenv.mkDerivation {
     patchelf \
       --set-interpreter "${glibc}/lib/ld-linux-aarch64.so.1" \
       "$TWDIR/exe/aarch64-linux-gnu/tailwindcss"
-    export LD_LIBRARY_PATH="${glibc}/lib"
+    # Bun-bundled tailwindcss needs glibc (libc.so.6 etc.) and libstdc++.so.6
+    export LD_LIBRARY_PATH="${glibc}/lib:${stdenv.cc.cc.lib}/lib"
     # tailwindcss-ruby with TAILWINDCSS_INSTALL_DIR looks for
     # $TAILWINDCSS_INSTALL_DIR/tailwindcss directly.
     export TAILWINDCSS_INSTALL_DIR="$TWDIR/exe/aarch64-linux-gnu"
