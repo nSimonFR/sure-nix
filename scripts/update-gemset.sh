@@ -35,17 +35,19 @@ cp "$CLONEDIR/sure/.ruby-version"  "$FLAKE_DIR/.ruby-version"
 # lockfile-update guard.  Removing the RUBY VERSION section from the lockfile
 # (and the `ruby` directive from the Gemfile via patchedGemfile/patchPhase in
 # package.nix) tells Bundler to skip the version check entirely.
+# bundlerEnv builds source gems (ruby platform); add the ruby platform to the
+# lockfile so BUNDLE_FORCE_RUBY_PLATFORM=1 can select ruby-platform variants.
+# This also adds source gem entries (e.g. tailwindcss-ruby (4.1.8)) for gems
+# that upstream's lockfile only lists with platform-specific suffixes.
+echo "==> Adding ruby platform to Gemfile.lock (bundle lock --add-platform ruby)..."
+(cd "$FLAKE_DIR" && nix shell nixpkgs#ruby_3_4 nixpkgs#bundler --command \
+  env BUNDLE_FORCE_RUBY_PLATFORM=1 bundle lock --add-platform ruby 2>/dev/null)
+
+# Remove the RUBY VERSION block re-added by bundle lock.
+# nixpkgs provides a slightly different ruby patch level (e.g. 3.4.8 vs 3.4.7).
+# Bundler in frozen mode rejects any Gemfile/lockfile mismatch, so we strip it.
 echo "==> Stripping RUBY VERSION section from Gemfile.lock..."
 perl -0777 -i -pe 's/\nRUBY VERSION\n   ruby [^\n]+\n//' "$FLAKE_DIR/Gemfile.lock"
-
-# bundlerEnv builds source gems; BUNDLE_FORCE_RUBY_PLATFORM=1 tells bundler
-# to select the ruby-platform variant.  Bundler then validates that "ruby"
-# is listed in the lockfile's PLATFORMS section — add it if absent.
-echo "==> Ensuring 'ruby' platform is in Gemfile.lock PLATFORMS..."
-if ! grep -q "^  ruby$" "$FLAKE_DIR/Gemfile.lock"; then
-  # Insert "  ruby" after the last platform entry before DEPENDENCIES
-  perl -i -pe 's/^(DEPENDENCIES)$/  ruby\n\n$1/' "$FLAKE_DIR/Gemfile.lock"
-fi
 
 echo "==> Running bundix (with nil-fix) to generate gemset.nix..."
 
