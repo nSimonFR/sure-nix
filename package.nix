@@ -11,12 +11,14 @@
   fetchFromGitHub,
   ruby,
   bundlerEnv,
+  defaultGemConfig,
   nodejs,
   makeWrapper,
   # Native build deps for gems with C extensions
   pkg-config,
   libxml2,
   libxslt,
+  libffi,
   zlib,
   openssl,
   postgresql,
@@ -34,7 +36,9 @@ let
     gemdir = ./.;
     # Gems with native extensions need their build inputs declared here.
     nativeBuildInputs = [ pkg-config ];
-    buildInputs = [ libxml2 libxslt zlib openssl postgresql ];
+    buildInputs = [ libxml2 libxslt libffi zlib openssl postgresql ];
+    # Use nixpkgs default gem config for common C-extension gems (nokogiri, ffi, etc.)
+    gemConfig = defaultGemConfig;
   };
 
 in
