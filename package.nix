@@ -109,12 +109,16 @@ stdenv.mkDerivation {
     # and point TAILWINDCSS_INSTALL_DIR at it for the asset compilation step.
     TWDIR=$TMPDIR/tailwindcss
     mkdir -p "$TWDIR"
+    echo "==> Extracting tailwindcss platform gem to $TWDIR"
     tar -xf ${tailwindcssGem} -C "$TWDIR"
+    ls -la "$TWDIR/"
+    echo "==> Extracting data.tar.gz"
     tar -xzf "$TWDIR/data.tar.gz" -C "$TWDIR"
+    ls -la "$TWDIR/exe/" || true
+    ls -la "$TWDIR/exe/aarch64-linux-gnu/" || true
     chmod +x "$TWDIR/exe/aarch64-linux-gnu/tailwindcss"
-    # tailwindcss-ruby checks TAILWINDCSS_INSTALL_DIR/<platform>/tailwindcss
-    # (Dir.glob) when the env var points to the exe parent dir, so expose
-    # the whole exe/ directory.
+    # tailwindcss-ruby with TAILWINDCSS_INSTALL_DIR looks for
+    # $TAILWINDCSS_INSTALL_DIR/tailwindcss directly.
     export TAILWINDCSS_INSTALL_DIR="$TWDIR/exe/aarch64-linux-gnu"
 
     # Precompile assets into public/assets
