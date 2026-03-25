@@ -25,10 +25,24 @@
       "schedule": ["every weekend"]
     },
     {
-      "description": "Sure upstream releases",
+      "description": "Sure upstream releases — regenerate gemset after version bump",
       "matchDepNames": ["we-promise/sure"],
       "automerge": false,
-      "schedule": ["at any time"]
+      "schedule": ["at any time"],
+      "postUpgradeTasks": {
+        "commands": [
+          "bash scripts/update-gemset.sh {{newVersion}}",
+          "git add Gemfile Gemfile.lock .ruby-version gemset.nix package.nix"
+        ],
+        "fileFilters": [
+          "Gemfile",
+          "Gemfile.lock",
+          ".ruby-version",
+          "gemset.nix",
+          "package.nix"
+        ],
+        "executionMode": "branch"
+      }
     }
   ]
 }

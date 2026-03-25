@@ -47,7 +47,7 @@ stdenv.mkDerivation {
     rev   = "v${version}";
     # Run: nix-prefetch-github we-promise sure --rev v0.6.8
     # then paste the sha256 here.
-    hash  = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    hash  = "sha256-CvvZnCdB/l6xwMD+SrhA594/95jBoQ9uxsJwpwYlVgc=";
   };
 
   nativeBuildInputs = [ makeWrapper nodejs ];
