@@ -40,7 +40,7 @@ WRAPPER="$BUNDIX_STORE/bin/.bundix-wrapped"
 # We split that into: activate → require bundix → prepend nil-fix → load binary.
 RUNSCRIPT="$(mktemp --suffix=.rb)"
 trap 'rm -f "$RUNSCRIPT"' RETURN
-sed 's|^load Gem\.activate_bin_path\(.*\)$|BUNDIX_BIN__ = Gem.activate_bin_path\1; require "bundix"; Bundix::Nixer.prepend(Module.new { def serialize; obj.nil? ? "null" : super; end }); load BUNDIX_BIN__|' \
+sed 's|^load Gem\.activate_bin_path\(.*\)$|BUNDIX_BIN__ = Gem.activate_bin_path\1; require "bundix"; Bundix::Nixer.prepend(Module.new { def serialize; obj.nil? ? "null" : super; end }); ENV["BUNDLE_FORCE_RUBY_PLATFORM"] = "1"; load BUNDIX_BIN__|' \
   "$WRAPPER" > "$RUNSCRIPT"
 chmod +x "$RUNSCRIPT"
 
