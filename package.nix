@@ -9,6 +9,7 @@
   lib,
   stdenv,
   fetchFromGitHub,
+  fetchurl,
   ruby_3_4,       # Sure requires Ruby 3.4.x (.ruby-version: 3.4.7; nixpkgs provides 3.4.8)
   bundlerEnv,
   defaultGemConfig,
@@ -28,6 +29,15 @@ let
   ruby = ruby_3_4;
   pname = "sure";
   version = "0.6.8";
+
+  # tailwindcss-ruby (source gem) ships no binary; it looks for the Tailwind CLI
+  # in its exe/ dir, falling back to TAILWINDCSS_INSTALL_DIR.  Fetch the aarch64
+  # platform gem to extract the binary for use during asset precompilation.
+  # Hash: nix-prefetch-url https://rubygems.org/gems/tailwindcss-ruby-4.1.8-aarch64-linux-gnu.gem
+  tailwindcssGem = fetchurl {
+    url    = "https://rubygems.org/gems/tailwindcss-ruby-4.1.8-aarch64-linux-gnu.gem";
+    sha256 = "17b983ag5ffvsmsrvdaqmy4z6w9zrdvqj73fxpsbdmrdfshfbc5k";
+  };
 
   # Sure's Gemfile uses `ruby file: ".ruby-version"` which requires the file to
   # be co-located with the Gemfile.  Since bundlerEnv's gemfile-and-lockfile
@@ -94,6 +104,18 @@ stdenv.mkDerivation {
     # Docker-based release process) but bundlerEnv only installs source gems.
     # Force bundler to select the ruby-platform (source) variant at runtime.
     export BUNDLE_FORCE_RUBY_PLATFORM=1
+
+    # tailwindcss-ruby source gem has no binary; extract from the platform gem
+    # and point TAILWINDCSS_INSTALL_DIR at it for the asset compilation step.
+    TWDIR=$TMPDIR/tailwindcss
+    mkdir -p "$TWDIR"
+    tar -xf ${tailwindcssGem} -C "$TWDIR"
+    tar -xzf "$TWDIR/data.tar.gz" -C "$TWDIR"
+    chmod +x "$TWDIR/exe/aarch64-linux-gnu/tailwindcss"
+    # tailwindcss-ruby checks TAILWINDCSS_INSTALL_DIR/<platform>/tailwindcss
+    # (Dir.glob) when the env var points to the exe parent dir, so expose
+    # the whole exe/ directory.
+    export TAILWINDCSS_INSTALL_DIR="$TWDIR/exe/aarch64-linux-gnu"
 
     # Precompile assets into public/assets
     bundle exec rails assets:precompile
