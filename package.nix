@@ -23,6 +23,9 @@
   zlib,
   openssl,
   postgresql,
+  # For patching the prebuilt tailwindcss binary to use NixOS glibc paths
+  patchelf,
+  glibc,
 }:
 
 let
@@ -80,7 +83,7 @@ stdenv.mkDerivation {
     hash  = "sha256-CvvZnCdB/l6xwMD+SrhA594/95jBoQ9uxsJwpwYlVgc=";
   };
 
-  nativeBuildInputs = [ makeWrapper nodejs ];
+  nativeBuildInputs = [ makeWrapper nodejs patchelf ];
   buildInputs = [ gems ruby ];
 
   # Patch the app source Gemfile to inline the ruby version so runtime wrappers
@@ -117,6 +120,13 @@ stdenv.mkDerivation {
     ls -la "$TWDIR/exe/" || true
     ls -la "$TWDIR/exe/aarch64-linux-gnu/" || true
     chmod +x "$TWDIR/exe/aarch64-linux-gnu/tailwindcss"
+    # The prebuilt binary uses the standard glibc ELF interpreter path
+    # (/lib/ld-linux-aarch64.so.1) which does not exist on NixOS.
+    # Patch the interpreter and rpath so the binary runs in the sandbox.
+    patchelf \
+      --set-interpreter "${glibc}/lib/ld-linux-aarch64.so.1" \
+      --set-rpath "${glibc}/lib" \
+      "$TWDIR/exe/aarch64-linux-gnu/tailwindcss"
     # tailwindcss-ruby with TAILWINDCSS_INSTALL_DIR looks for
     # $TAILWINDCSS_INSTALL_DIR/tailwindcss directly.
     export TAILWINDCSS_INSTALL_DIR="$TWDIR/exe/aarch64-linux-gnu"
