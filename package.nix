@@ -90,6 +90,10 @@ stdenv.mkDerivation {
     export RAILS_ENV=production
     export SECRET_KEY_BASE=build-placeholder-not-used-at-runtime
     export DATABASE_URL=postgresql:///placeholder
+    # The lockfile contains aarch64-linux-gnu platform entries (from upstream's
+    # Docker-based release process) but bundlerEnv only installs source gems.
+    # Force bundler to select the ruby-platform (source) variant at runtime.
+    export BUNDLE_FORCE_RUBY_PLATFORM=1
 
     # Precompile assets into public/assets
     bundle exec rails assets:precompile
@@ -111,22 +115,28 @@ stdenv.mkDerivation {
     # At runtime the module passes secrets via EnvironmentFile.
     mkdir -p $out/bin
 
+    # Do NOT override BUNDLE_GEMFILE: the bundlerEnv bundle wrapper already
+    # sets it to the nix-store gemfile-and-lockfile path (source gems only).
+    # Overriding it with $appDir/Gemfile would point to the upstream lockfile
+    # which contains aarch64-linux-gnu platform entries that bundler can't
+    # satisfy in frozen mode.  BUNDLE_FORCE_RUBY_PLATFORM forces the ruby
+    # (source) gem variant even when the lockfile lists platform variants.
     makeWrapper ${gems}/bin/bundle $out/bin/sure-web \
       --add-flags "exec puma" \
       --set    RAILS_ENV production \
-      --set    BUNDLE_GEMFILE "$appDir/Gemfile" \
+      --set    BUNDLE_FORCE_RUBY_PLATFORM 1 \
       --chdir  "$appDir"
 
     makeWrapper ${gems}/bin/bundle $out/bin/sure-worker \
       --add-flags "exec sidekiq" \
       --set    RAILS_ENV production \
-      --set    BUNDLE_GEMFILE "$appDir/Gemfile" \
+      --set    BUNDLE_FORCE_RUBY_PLATFORM 1 \
       --chdir  "$appDir"
 
     makeWrapper ${gems}/bin/bundle $out/bin/sure-rails \
       --add-flags "exec rails" \
       --set    RAILS_ENV production \
-      --set    BUNDLE_GEMFILE "$appDir/Gemfile" \
+      --set    BUNDLE_FORCE_RUBY_PLATFORM 1 \
       --chdir  "$appDir"
 
     runHook postInstall
