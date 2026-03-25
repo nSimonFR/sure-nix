@@ -28,6 +28,16 @@ cp "$CLONEDIR/sure/Gemfile"        "$FLAKE_DIR/Gemfile"
 cp "$CLONEDIR/sure/Gemfile.lock"   "$FLAKE_DIR/Gemfile.lock"
 cp "$CLONEDIR/sure/.ruby-version"  "$FLAKE_DIR/.ruby-version"
 
+# Remove the RUBY VERSION block from Gemfile.lock.
+# nixpkgs provides a slightly different ruby patch level (e.g. 3.4.8 vs 3.4.7).
+# Bundler in frozen mode rejects any Gemfile/lockfile mismatch: patching the
+# Gemfile to match either version triggers either validate_ruby! or the frozen
+# lockfile-update guard.  Removing the RUBY VERSION section from the lockfile
+# (and the `ruby` directive from the Gemfile via patchedGemfile/patchPhase in
+# package.nix) tells Bundler to skip the version check entirely.
+echo "==> Stripping RUBY VERSION section from Gemfile.lock..."
+perl -0777 -i -pe 's/\nRUBY VERSION\n   ruby [^\n]+\n//' "$FLAKE_DIR/Gemfile.lock"
+
 echo "==> Running bundix (with nil-fix) to generate gemset.nix..."
 
 # Resolve bundix from the system nix store (fast — uses cached build).
