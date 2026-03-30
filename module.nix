@@ -30,6 +30,7 @@ let
     PORT                = toString cfg.port;
     RAILS_STORAGE_PATH  = "${cfg.dataDir}/storage";
     RAILS_TMP_PATH      = "${cfg.dataDir}/tmp";
+    TMPDIR              = "${cfg.dataDir}/tmp";
     HOME                = cfg.dataDir;
     # Suppress the SaaS trial/deletion nag shown to non-self-hosted deployments.
     SELF_HOSTED         = "true";
