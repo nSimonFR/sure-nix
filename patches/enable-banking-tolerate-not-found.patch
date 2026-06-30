@@ -1,0 +1,33 @@
+--- a/app/models/enable_banking_item/importer.rb	2026-06-30 13:47:54.382872757 +0200
++++ b/app/models/enable_banking_item/importer.rb	2026-06-30 13:47:54.494873148 +0200
+@@ -131,7 +131,7 @@
+       provider_error = exceptions.find { |ex| ex.is_a?(Provider::EnableBanking::EnableBankingError) }
+ 
+       # Handle session expiration status update
+-      if provider_error && [ :unauthorized, :not_found ].include?(provider_error.error_type)
++      if provider_error && provider_error.error_type == :unauthorized
+         enable_banking_item.update!(status: :requires_update)
+         return I18n.t("enable_banking_items.errors.session_invalid")
+       end
+@@ -214,6 +214,10 @@
+       end
+       true
+     rescue Provider::EnableBanking::EnableBankingError => e
++      if e.error_type == :not_found
++        Rails.logger.warn "EnableBankingItem::Importer - Balance unavailable (404) for account #{enable_banking_account.uid}; ASPSP did not expose it or account is stale, skipping balance (non-fatal)"
++        return true
++      end
+       @sync_error = promote_session_invalid(@sync_error, handle_sync_error(e))
+       Rails.logger.error "EnableBankingItem::Importer - Error fetching balance for account #{enable_banking_account.uid}: #{e.message}"
+       false
+@@ -350,6 +354,10 @@
+ 
+       { success: true, transactions_count: transactions_count }
+     rescue Provider::EnableBanking::EnableBankingError => e
++      if e.error_type == :not_found
++        Rails.logger.warn "EnableBankingItem::Importer - Transactions unavailable (404) for account #{enable_banking_account.uid}; skipping account (non-fatal)"
++        return { success: true, transactions_count: 0 }
++      end
+       Rails.logger.error "EnableBankingItem::Importer - Error fetching transactions for account #{enable_banking_account.uid}: #{e.message}"
+       { success: false, transactions_count: 0, error: handle_sync_error(e) }
+     rescue => e
