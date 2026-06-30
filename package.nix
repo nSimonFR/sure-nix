@@ -98,11 +98,20 @@ stdenv.mkDerivation {
     hash  = "sha256-jKBsHu3uwEsfvQXTbe2VvNDr9xoBYx4cP01drFv6ssg=";
   };
 
-  # Honor the operator-configured Lunchflow base_url for self-hosted connectors.
-  # Upstream's LunchflowItem#effective_base_url discards base_url and hardlocks
-  # every request to the lunchflow.app SaaS, which breaks pointing Sure at a
-  # local connector (e.g. for-sure on http://127.0.0.1:8340).
-  patches = [ ./patches/lunchflow-self-hosted-base-url.patch ];
+  patches = [
+    # Honor the operator-configured Lunchflow base_url for self-hosted connectors.
+    # Upstream's LunchflowItem#effective_base_url discards base_url and hardlocks
+    # every request to the lunchflow.app SaaS, which breaks pointing Sure at a
+    # local connector (e.g. for-sure on http://127.0.0.1:8340).
+    ./patches/lunchflow-self-hosted-base-url.patch
+    # Tolerate Enable Banking per-account 404s. Upstream treats a :not_found on
+    # an account's balances/transactions endpoint as an expired session, bricking
+    # the whole connection (requires_update) and failing the sync — even though
+    # other accounts on the same session work. Treat 404 as an account-scoped
+    # skip so working accounts still import (e.g. a phantom Société Générale
+    # account whose api_account_id is invalid no longer blocks the real one).
+    ./patches/enable-banking-tolerate-not-found.patch
+  ];
 
   nativeBuildInputs = [ makeWrapper nodejs patchelf ];
   buildInputs = [ gems ruby ];
