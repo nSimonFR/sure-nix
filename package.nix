@@ -98,6 +98,12 @@ stdenv.mkDerivation {
     hash  = "sha256-jKBsHu3uwEsfvQXTbe2VvNDr9xoBYx4cP01drFv6ssg=";
   };
 
+  # Honor the operator-configured Lunchflow base_url for self-hosted connectors.
+  # Upstream's LunchflowItem#effective_base_url discards base_url and hardlocks
+  # every request to the lunchflow.app SaaS, which breaks pointing Sure at a
+  # local connector (e.g. for-sure on http://127.0.0.1:8340).
+  patches = [ ./patches/lunchflow-self-hosted-base-url.patch ];
+
   nativeBuildInputs = [ makeWrapper nodejs patchelf ];
   buildInputs = [ gems ruby ];
 

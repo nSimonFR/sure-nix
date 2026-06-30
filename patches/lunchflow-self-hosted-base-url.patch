@@ -1,0 +1,24 @@
+--- a/app/models/lunchflow_item.rb	2026-06-30 11:26:49.604567252 +0200
++++ b/app/models/lunchflow_item.rb	2026-06-30 11:26:49.624567464 +0200
+@@ -156,17 +156,9 @@
+   end
+ 
+   def effective_base_url
+-    return DEFAULT_BASE_URL if base_url.blank?
+-
+-    uri = URI.parse(base_url)
+-    return DEFAULT_BASE_URL unless uri.is_a?(URI::HTTPS)
+-    return DEFAULT_BASE_URL unless uri.host == "lunchflow.app"
+-    return DEFAULT_BASE_URL unless [ "", "/", "/api/v1", "/api/v1/" ].include?(uri.path)
+-    return DEFAULT_BASE_URL unless uri.query.blank?
+-    return DEFAULT_BASE_URL unless uri.fragment.blank?
+-
+-    DEFAULT_BASE_URL
+-  rescue URI::InvalidURIError
+-    DEFAULT_BASE_URL
++    # nic-os patch: honor the operator-configured base_url so self-hosted
++    # connectors (e.g. for-sure on http://127.0.0.1) are reachable. Upstream
++    # discards base_url and hardlocks every path to the lunchflow.app SaaS.
++    base_url.presence || DEFAULT_BASE_URL
+   end
+ end
