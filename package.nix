@@ -31,7 +31,7 @@
 let
   ruby = ruby_3_4;
   pname = "sure";
-  version = "0.7.1-hotfix.1";
+  version = "0.7.2";
 
   # tailwindcss-ruby (source gem) ships no binary; it looks for the Tailwind CLI
   # in its exe/ dir, falling back to TAILWINDCSS_INSTALL_DIR.  Fetch the matching
@@ -95,7 +95,7 @@ stdenv.mkDerivation {
     rev   = "v${version}";
     # Run: nix-prefetch-github we-promise sure --rev v0.6.9
     # then paste the sha256 here.
-    hash  = "sha256-jKBsHu3uwEsfvQXTbe2VvNDr9xoBYx4cP01drFv6ssg=";
+    hash  = "sha256-YS3aQzvEodbuI2bNZJNgnf28Dzsa8WyxNxILu4YMMyo=";
   };
 
   patches = [
