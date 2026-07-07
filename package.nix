@@ -113,6 +113,17 @@ stdenv.mkDerivation {
     ./patches/enable-banking-tolerate-not-found.patch
   ];
 
+  # Sub-path hosting: when RAILS_RELATIVE_URL_ROOT is set at runtime, mount the
+  # app under that prefix via Rack::URLMap so Rack supplies SCRIPT_NAME. Rails
+  # then generates prefixed redirects/path-helpers (config.relative_url_root
+  # alone only prefixes ASSETS, not redirects — so login etc. would 302 to the
+  # domain root without this). Identity (unchanged) when the env var is unset.
+  postPatch = ''
+    substituteInPlace config.ru \
+      --replace-fail 'run Rails.application' \
+        '_urr = ENV["RAILS_RELATIVE_URL_ROOT"].to_s; run(_urr.empty? ? Rails.application : Rack::URLMap.new(_urr => Rails.application))'
+  '';
+
   nativeBuildInputs = [ makeWrapper nodejs patchelf ];
   buildInputs = [ gems ruby ];
 
