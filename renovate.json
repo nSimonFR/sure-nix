@@ -4,11 +4,12 @@
   "nix": {
     "enabled": true
   },
+  "enabledManagers": ["custom.regex", "nix"],
   "customManagers": [
     {
       "description": "Track Sure upstream releases in package.nix",
       "customType": "regex",
-      "fileMatch": ["^package\\.nix$"],
+      "managerFilePatterns": ["/^package\\.nix$/"],
       "matchStrings": [
         "version\\s*=\\s*\"(?<currentValue>[^\"]+)\";"
       ],
