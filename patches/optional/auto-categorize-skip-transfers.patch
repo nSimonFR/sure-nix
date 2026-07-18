@@ -1,0 +1,21 @@
+Skip transfer-kind transactions in AI auto-categorization.
+
+Sure's AI auto-categorizer (Family::AutoCategorizer#scope) queries every
+uncategorized, unlocked transaction and sends it to the LLM — including internal
+transfers (kind = funds_movement, etc.), which the model then mislabels (e.g. as
+"Investment Contributions"). Sure's own model already treats transfers as
+non-categorizable (Transfer#categorizable? is false for funds_movement), so
+exclude Transaction::TRANSFER_KINDS from the auto-categorization scope. This is
+the final gate before the LLM call, so it also covers the rule-executor path.
+
+Optional patch (off by default); enabled per-deployment via patchFlags.
+--- a/app/models/family/auto_categorizer.rb
++++ b/app/models/family/auto_categorizer.rb
+@@ -90,6 +90,7 @@
+ 
+     def scope
+       family.transactions.where(id: transaction_ids, category_id: nil)
++                         .where.not(kind: Transaction::TRANSFER_KINDS)
+                          .enrichable(:category_id)
+                          .includes(:category, :merchant, :entry)
+     end
