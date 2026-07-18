@@ -18,7 +18,9 @@ self:
 
 let
   cfg = config.services.sure;
-  defaultPackage = pkgs.callPackage (self + "/package.nix") { };
+  defaultPackage = pkgs.callPackage (self + "/package.nix") {
+    inherit (cfg) patchFlags;
+  };
 
   # Environment shared by all three Sure services.
   # Secrets (SECRET_KEY_BASE, POSTGRES_PASSWORD) come from cfg.environmentFile.
@@ -57,6 +59,17 @@ in
       type        = lib.types.package;
       default     = defaultPackage;
       description = "The Sure derivation to use.";
+    };
+
+    patchFlags = lib.mkOption {
+      type        = lib.types.attrsOf lib.types.bool;
+      default     = { };
+      example     = { auto-categorize-skip-transfers = true; };
+      description = ''
+        Enable/disable named optional Sure source patches (see patches/optional/
+        and patches/base/ in sure-nix). Overrides each patch's built-in default.
+        Only applies to the default package; setting `package` directly bypasses this.
+      '';
     };
 
     port = lib.mkOption {

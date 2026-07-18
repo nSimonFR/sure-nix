@@ -26,6 +26,10 @@
   # For patching the prebuilt tailwindcss binary to use NixOS glibc paths
   patchelf,
   glibc,
+  # Optional source patches: attrset of patch-name -> bool, overriding the
+  # per-patch defaults in `patchDefs` below. Base fixes default on; behaviour-
+  # preference patches (e.g. auto-categorize-skip-transfers) default off.
+  patchFlags ? { },
 }:
 
 let
@@ -85,6 +89,43 @@ let
     gemConfig = defaultGemConfig;
   };
 
+  # Available source patches, each with a default enabled state. `patchFlags`
+  # (a function arg) overrides these per name. Base fixes are functional and
+  # default on; optional patches are behaviour preferences and default off.
+  # See patches/base/ and patches/optional/.
+  patchDefs = {
+    # Honor the operator-configured Lunchflow base_url for self-hosted connectors.
+    # Upstream's LunchflowItem#effective_base_url discards base_url and hardlocks
+    # every request to the lunchflow.app SaaS, which breaks pointing Sure at a
+    # local connector (e.g. for-sure on http://127.0.0.1:8340).
+    "lunchflow-self-hosted-base-url" = {
+      file    = ./patches/base/lunchflow-self-hosted-base-url.patch;
+      default = true;
+    };
+    # Tolerate Enable Banking per-account 404s. Upstream treats a :not_found on
+    # an account's balances/transactions endpoint as an expired session, bricking
+    # the whole connection (requires_update) and failing the sync — even though
+    # other accounts on the same session work. Treat 404 as an account-scoped
+    # skip so working accounts still import (e.g. a phantom Société Générale
+    # account whose api_account_id is invalid no longer blocks the real one).
+    "enable-banking-tolerate-not-found" = {
+      file    = ./patches/base/enable-banking-tolerate-not-found.patch;
+      default = true;
+    };
+    # Skip transfer-kind transactions in AI auto-categorization, so internal
+    # transfers (funds_movement, etc.) are never mislabeled by the LLM. Sure's
+    # own model already treats transfers as non-categorizable. Off by default.
+    "auto-categorize-skip-transfers" = {
+      file    = ./patches/optional/auto-categorize-skip-transfers.patch;
+      default = false;
+    };
+  };
+
+  enabledPatches = (lib.mapAttrs (_: d: d.default) patchDefs) // patchFlags;
+  selectedPatches = lib.concatMap
+    (n: lib.optional (enabledPatches.${n} or false) patchDefs.${n}.file)
+    (lib.attrNames patchDefs);
+
 in
 stdenv.mkDerivation {
   inherit pname version;
@@ -98,20 +139,8 @@ stdenv.mkDerivation {
     hash  = "sha256-YS3aQzvEodbuI2bNZJNgnf28Dzsa8WyxNxILu4YMMyo=";
   };
 
-  patches = [
-    # Honor the operator-configured Lunchflow base_url for self-hosted connectors.
-    # Upstream's LunchflowItem#effective_base_url discards base_url and hardlocks
-    # every request to the lunchflow.app SaaS, which breaks pointing Sure at a
-    # local connector (e.g. for-sure on http://127.0.0.1:8340).
-    ./patches/lunchflow-self-hosted-base-url.patch
-    # Tolerate Enable Banking per-account 404s. Upstream treats a :not_found on
-    # an account's balances/transactions endpoint as an expired session, bricking
-    # the whole connection (requires_update) and failing the sync — even though
-    # other accounts on the same session work. Treat 404 as an account-scoped
-    # skip so working accounts still import (e.g. a phantom Société Générale
-    # account whose api_account_id is invalid no longer blocks the real one).
-    ./patches/enable-banking-tolerate-not-found.patch
-  ];
+  # Selected from `patchDefs` above via per-patch defaults + `patchFlags` override.
+  patches = selectedPatches;
 
   # Sub-path hosting: when RAILS_RELATIVE_URL_ROOT is set at runtime, mount the
   # app under that prefix via Rack::URLMap so Rack supplies SCRIPT_NAME. Rails
