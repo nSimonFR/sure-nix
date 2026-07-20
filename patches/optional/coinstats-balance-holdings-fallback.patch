@@ -1,0 +1,40 @@
+Anchor CoinStats wallet balance to holdings value during quota gaps.
+
+When the CoinStats free-tier credit limit is reached, every wallet endpoint
+returns 406 and the account snapshot yields a zero balance. Sure's reverse-
+balance materializer then sets cash = -holdings, collapsing the account to $0
+even though the (preserved) holdings still carry their last-good qty x price.
+
+Single-asset wallet holdings are NOT deleted during a gap: process_single_asset
+_holding early-returns on zero quantity without calling cleanup_stale_holdings!
+(only the exchange-portfolio path prunes). So their value is a safe fallback:
+when CoinStats supplies no balance, anchor the account to the sum of its latest
+holdings instead of zero, and treat cash as zero (a bare wallet holds no cash).
+
+Optional patch (off by default); enabled per-deployment via patchFlags.
+diff --git a/app/models/coinstats_account/processor.rb b/app/models/coinstats_account/processor.rb
+index c607163..f3ccdaa 100644
+--- a/app/models/coinstats_account/processor.rb
++++ b/app/models/coinstats_account/processor.rb
+@@ -52,6 +52,21 @@ class CoinstatsAccount::Processor
+       currency = parse_currency(coinstats_account.currency) || account.currency || "USD"
+       cash_balance = coinstats_account.inferred_cash_balance
+ 
++      # Quota-gap resilience: when CoinStats returns no usable balance (e.g. the
++      # free-tier credit limit is reached and wallet endpoints 406), the snapshot
++      # yields a zero anchor, which the reverse-balance materializer turns into
++      # cash = -holdings, collapsing the account to $0 despite valued holdings.
++      # Single-asset wallet holdings are preserved during a gap, so fall back to
++      # their value rather than zeroing crypto we still have a last-good price for.
++      if balance.to_d.zero?
++        latest_holding_date = account.holdings.maximum(:date)
++        holdings_value = latest_holding_date ? account.holdings.where(date: latest_holding_date).sum(:amount) : 0.to_d
++        if holdings_value.to_d.positive?
++          balance = holdings_value
++          cash_balance = 0.to_d
++        end
++      end
++
+       account.update!(
+         balance: balance,
+         cash_balance: cash_balance,

@@ -119,6 +119,15 @@ let
       file    = ./patches/optional/auto-categorize-skip-transfers.patch;
       default = false;
     };
+    # Keep CoinStats-synced crypto wallets from collapsing to $0 when the
+    # CoinStats free-tier credit limit is reached (every wallet endpoint 406s →
+    # zero balance snapshot → reverse materializer sets cash = -holdings). When
+    # CoinStats supplies no balance, anchor the account to its preserved holdings
+    # value instead. Off by default. See patches/optional/.
+    "coinstats-balance-holdings-fallback" = {
+      file    = ./patches/optional/coinstats-balance-holdings-fallback.patch;
+      default = false;
+    };
   };
 
   enabledPatches = (lib.mapAttrs (_: d: d.default) patchDefs) // patchFlags;
