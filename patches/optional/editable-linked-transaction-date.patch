@@ -1,0 +1,29 @@
+Allow editing the date of provider-linked transactions.
+
+Upstream disables the date field (and amount/nature) on the transaction
+edit form whenever an entry is `linked?` (external_id present) — i.e. any
+transaction imported from a connector (Lunchflow, Enable Banking, CoinStats,
+etc.). The lock is UI-only: the server permits `:date` in entry_params for
+owner/full_control users with no `linked?` guard, and TransactionsController#
+update already calls `mark_user_modified!`, which flips `protected_from_sync?`
+so the next provider sync will not overwrite the manual value.
+
+Since every account here is connector-fed, that UI lock makes transaction
+dates uneditable in practice. Re-enable date editing on linked entries by
+dropping `@entry.linked?` from the date field's `disabled:` condition only.
+Split locks (`split_locked`) and account-permission locks (`edit_locked`) are
+legitimate and kept intact; amount/nature stay locked on linked entries so the
+synced monetary values remain authoritative.
+
+Optional patch (off by default); enabled per-deployment via patchFlags.
+--- a/app/views/transactions/show.html.erb
++++ b/app/views/transactions/show.html.erb
+@@ -66,7 +66,7 @@
+           <%= f.date_field :date,
+                 label: t(".date_label"),
+                 max: Date.current,
+-                disabled: @entry.linked? || split_locked || edit_locked,
++                disabled: split_locked || edit_locked,
+                 "data-auto-submit-form-target": "auto" %>
+           <% unless @entry.transaction.transfer? %>
+             <div class="flex items-center gap-2">
