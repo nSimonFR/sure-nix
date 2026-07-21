@@ -128,6 +128,17 @@ let
       file    = ./patches/optional/coinstats-balance-holdings-fallback.patch;
       default = false;
     };
+    # Re-enable editing the date of provider-linked transactions. Upstream
+    # disables the date field whenever an entry is linked? (external_id set,
+    # i.e. connector-imported), but the server accepts the change and marks the
+    # entry user_modified so sync won't overwrite it — the lock is UI-only.
+    # With every account connector-fed, that makes transaction dates
+    # uneditable. Drops @entry.linked? from the date field's disabled condition
+    # only; amount/nature stay locked. Off by default. See patches/optional/.
+    "editable-linked-transaction-date" = {
+      file    = ./patches/optional/editable-linked-transaction-date.patch;
+      default = false;
+    };
   };
 
   enabledPatches = (lib.mapAttrs (_: d: d.default) patchDefs) // patchFlags;
