@@ -154,9 +154,20 @@ stdenv.mkDerivation {
     owner = "we-promise";
     repo  = "sure";
     rev   = "v${version}";
-    # Run: nix-prefetch-github we-promise sure --rev v0.6.9
-    # then paste the sha256 here.
-    hash  = "sha256-YS3aQzvEodbuI2bNZJNgnf28Dzsa8WyxNxILu4YMMyo=";
+    # `name` MUST embed `version`. A fixed-output derivation's store path is
+    # computed from (output hash, name) — NOT from owner/repo/rev — so with a
+    # constant name a stale `hash` carried over from the previous version still
+    # resolves to the source tree already in the store: Nix considers the fetch
+    # satisfied, never contacts GitHub, never sees the new rev, and silently
+    # builds the OLD code under the NEW version number. That shipped v0.7.2's
+    # code as "0.7.3" (bump 8875e8f: `version` moved, `hash` did not).
+    # Embedding the version makes the path move with it, so a stale hash fails
+    # loudly with a mismatch instead of silently succeeding.
+    name  = "${pname}-${version}-source";
+    # Refresh with:
+    #   nix run nixpkgs#nix-prefetch-github -- --rev v<VERSION> we-promise sure
+    # scripts/update-gemset.sh does this for you and verifies the rewrite landed.
+    hash  = "sha256-vLsmxHYVeSO2ZiXsmzRpOKMwUvjPQHFbAOYs8M44n3k=";
   };
 
   # Selected from `patchDefs` above via per-patch defaults + `patchFlags` override.

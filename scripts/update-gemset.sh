@@ -16,6 +16,29 @@ VERSION="${1:-0.6.8}"
 OWNER="we-promise"
 REPO="sure"
 
+# Compute the src hash FIRST, before mutating a single tracked file.
+#
+# This used to run last, and stderr was sent to /dev/null. When it failed, `set
+# -e` aborted the script *after* Gemfile/Gemfile.lock/gemset.nix had already been
+# rewritten — and Renovate, whose regex manager bumps `version` in package.nix
+# independently of this script, committed that half-applied state. Result: a
+# package.nix declaring a new version against the previous version's src hash.
+# Doing it first means a prefetch failure leaves the tree untouched.
+echo "==> Computing src hash for v${VERSION} (before touching any file)..."
+PREFETCH_JSON="$(nix run nixpkgs#nix-prefetch-github -- \
+  --rev "v${VERSION}" "$OWNER" "$REPO")"
+HASH="$(printf '%s' "$PREFETCH_JSON" | nix run nixpkgs#jq -- -r '.hash')"
+case "$HASH" in
+  sha256-*) ;;
+  *)
+    echo "ERROR: no usable src hash for v${VERSION}; refusing to touch any file." >&2
+    echo "nix-prefetch-github said:" >&2
+    printf '%s\n' "$PREFETCH_JSON" >&2
+    exit 1
+    ;;
+esac
+echo "    src hash: ${HASH}"
+
 echo "==> Fetching Sure v${VERSION} source..."
 CLONEDIR="$(mktemp -d)"
 trap 'rm -rf "$CLONEDIR"' EXIT
@@ -86,14 +109,23 @@ while IFS= read -r line; do
   sed -i "s/${OLD_HASH}/${CORRECT_HASH}/" "$FLAKE_DIR/gemset.nix"
 done < <(grep "aarch64-linux-gnu\|aarch64-linux-musl" "$FLAKE_DIR/Gemfile.lock" | grep -oP '^\s+\K[a-zA-Z0-9_-]+' | sort -u)
 
-echo "==> Computing src hash for package.nix..."
-HASH="$(nix run nixpkgs#nix-prefetch-github -- \
-  --rev "v${VERSION}" "$OWNER" "$REPO" 2>/dev/null | \
-  nix run nixpkgs#jq -- -r '.hash')"
-
 echo "==> Patching hash and version in package.nix..."
-sed -i "s|version = \"[^\"]*\";|version = \"${VERSION}\";|" "$FLAKE_DIR/package.nix"
-sed -i "s|hash  = \"[^\"]*\";|hash  = \"${HASH}\";|"       "$FLAKE_DIR/package.nix"
+sed -i "s|version = \"[^\"]*\";|version = \"${VERSION}\";|"        "$FLAKE_DIR/package.nix"
+sed -i "s|hash  = \"sha256-[^\"]*\";|hash  = \"${HASH}\";|"        "$FLAKE_DIR/package.nix"
+
+# Verify BOTH rewrites landed. `version` and `hash` must move together: version
+# alone is the exact desync that shipped v0.7.2's code as "0.7.3", and a silent
+# no-op sed (pattern drift after a reformat) is how it would happen again.
+if ! grep -q "version = \"${VERSION}\";" "$FLAKE_DIR/package.nix"; then
+  echo "ERROR: version rewrite did not apply to package.nix." >&2
+  exit 1
+fi
+if ! grep -q "hash  = \"${HASH}\";" "$FLAKE_DIR/package.nix"; then
+  echo "ERROR: src hash rewrite did not apply to package.nix — the version was" >&2
+  echo "       bumped but the hash was not. Do not commit this tree." >&2
+  exit 1
+fi
+echo "    package.nix: version=${VERSION} hash=${HASH}"
 
 echo ""
 echo "Done. Files updated:"
