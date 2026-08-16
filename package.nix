@@ -112,6 +112,17 @@ let
       file    = ./patches/base/enable-banking-tolerate-not-found.patch;
       default = true;
     };
+    # Make the PWA surface honor RAILS_RELATIVE_URL_ROOT. Upstream hardcodes the
+    # domain root in the web app manifest (start_url/scope/icons), the head's
+    # apple-touch-icon links, the service-worker registration and the worker's own
+    # offline cache — so under sub-path hosting (which `postPatch` below enables)
+    # the icons 404, the installed app is scoped to and launches at the domain
+    # root, and the service worker silently never installs. Identity when
+    # RAILS_RELATIVE_URL_ROOT is unset.
+    "pwa-relative-url-root" = {
+      file    = ./patches/base/pwa-relative-url-root.patch;
+      default = true;
+    };
     # Skip transfer-kind transactions in AI auto-categorization, so internal
     # transfers (funds_movement, etc.) are never mislabeled by the LLM. Sure's
     # own model already treats transfers as non-categorizable. Off by default.
