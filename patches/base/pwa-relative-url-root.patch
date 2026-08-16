@@ -15,6 +15,13 @@ it hardcodes the domain root — so under a sub-path every piece of it breaks:
   * app/views/pwa/service-worker.js — caches "/offline.html" and
     "/logo-offline.svg"; those 404 too, so cache.addAll() rejects and fails the
     install event even if registration is fixed.
+  * app/controllers/pwa_controller.rb — NOT a sub-path issue, but it is why none
+    of the above was observable: Rails raises InvalidCrossOriginRequest (422) for
+    any non-XHR response with a JavaScript media type, and a browser registering
+    a service worker does not issue an XHR. #service_worker therefore 422s at the
+    domain root too, so Sure's offline support has never worked anywhere. Fixed
+    here because the sub-path fix is what finally makes the request reach Rails
+    instead of 404ing.
 
 Files under public/ are served by the web server rather than the asset
 pipeline, so they get no prefix automatically; splice on `root_path`, which is
@@ -26,6 +33,27 @@ prefix from a new `app-base-path` meta tag rendered in the shared head.
 Every change is an identity transform when RAILS_RELATIVE_URL_ROOT is unset, so
 root-hosted deployments are unaffected. Base patch (on by default).
 
+diff --git a/app/controllers/pwa_controller.rb b/app/controllers/pwa_controller.rb
+index 2ea181b..623cdf5 100644
+--- a/app/controllers/pwa_controller.rb
++++ b/app/controllers/pwa_controller.rb
+@@ -1,5 +1,16 @@
+ class PwaController < ApplicationController
+   skip_authentication
++  # Rails raises ActionController::InvalidCrossOriginRequest — rendered as 422 —
++  # for any NON-XHR response whose media type is JavaScript
++  # (RequestForgeryProtection#non_xhr_javascript_response?). A browser registering
++  # a service worker does not issue an XHR, so #service_worker returned 422 to
++  # every real registration attempt and the worker never installed. The guard
++  # exists to stop a third-party <script src> from reading a JS response that
++  # embeds user data; this action renders a static, unauthenticated asset with no
++  # session-derived content, so there is nothing to leak. Skipping forgery
++  # protection leaves @marked_for_same_origin_verification false, which is what
++  # the after_action gates on.
++  skip_forgery_protection
+ 
+   def manifest
+     # Force JSON format to avoid MissingTemplate errors when browsers request /manifest
 diff --git a/app/javascript/application.js b/app/javascript/application.js
 index 353017f..d00f1ab 100644
 --- a/app/javascript/application.js
