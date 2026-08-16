@@ -1,0 +1,138 @@
+Make the PWA surface honor RAILS_RELATIVE_URL_ROOT.
+
+Sure supports sub-path hosting: with RAILS_RELATIVE_URL_ROOT set (sure-nix
+mounts the app under it via Rack::URLMap in config.ru), Rails path helpers and
+asset URLs carry the prefix. The PWA surface is the one part that does not —
+it hardcodes the domain root — so under a sub-path every piece of it breaks:
+
+  * app/views/pwa/manifest.json.erb — `start_url` and `scope` are "/", and the
+    icon `src`s are "/logo-pwa.png" etc. The icons 404, and the installed app
+    is scoped to (and launches at) the domain root, which is not Sure.
+  * app/views/layouts/shared/_head.html.erb — the apple-touch-icon and icon
+    links are root-absolute, so iOS "Add to Home Screen" gets no icon.
+  * app/javascript/application.js — registers "/service-worker", which 404s,
+    so the worker never installs and offline support is silently dead.
+  * app/views/pwa/service-worker.js — caches "/offline.html" and
+    "/logo-offline.svg"; those 404 too, so cache.addAll() rejects and fails the
+    install event even if registration is fixed.
+
+Files under public/ are served by the web server rather than the asset
+pipeline, so they get no prefix automatically; splice on `root_path`, which is
+"/" at the domain root and "<prefix>/" under one. The service worker resolves
+its assets against `self.location` instead, since it is plain JS with no ERB.
+application.js is a static importmap asset for the same reason, so it reads the
+prefix from a new `app-base-path` meta tag rendered in the shared head.
+
+Every change is an identity transform when RAILS_RELATIVE_URL_ROOT is unset, so
+root-hosted deployments are unaffected. Base patch (on by default).
+
+diff --git a/app/javascript/application.js b/app/javascript/application.js
+index 353017f..d00f1ab 100644
+--- a/app/javascript/application.js
++++ b/app/javascript/application.js
+@@ -53,7 +53,12 @@ Turbo.StreamActions.redirect = function () {
+ // Register service worker for PWA offline support
+ if ('serviceWorker' in navigator) {
+   window.addEventListener('load', () => {
+-    navigator.serviceWorker.register('/service-worker')
++    // Mount prefix ("/" at the domain root, e.g. "/sure/" under
++    // RAILS_RELATIVE_URL_ROOT) — see the app-base-path meta tag in
++    // layouts/shared/_head. A root-absolute '/service-worker' 404s when the app
++    // is hosted under a sub-path, so the registration silently never happens.
++    const appBasePath = document.querySelector('meta[name="app-base-path"]')?.content || '/';
++    navigator.serviceWorker.register(`${appBasePath}service-worker`)
+       .then(registration => {
+         console.log('Service Worker registered with scope:', registration.scope);
+       })
+diff --git a/app/views/layouts/shared/_head.html.erb b/app/views/layouts/shared/_head.html.erb
+index 91ea791..08b0381 100644
+--- a/app/views/layouts/shared/_head.html.erb
++++ b/app/views/layouts/shared/_head.html.erb
+@@ -26,12 +26,18 @@
+   <meta name="theme-color" content="#F9F9F9" media="(prefers-color-scheme: light)">
+   <meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
+ 
++  <%# Mount prefix (RAILS_RELATIVE_URL_ROOT), "/" when hosted at the domain root.
++      Files under public/ are served by the web server, not the asset pipeline, so
++      they need this prefix spliced on by hand — and application.js reads it from
++      here to register the service worker at the right path. %>
++  <meta name="app-base-path" content="<%= root_path %>">
++
+   <link rel="manifest" href="<%= pwa_manifest_path %>">
+   <%# Provide multiple iOS icons (standard 180x180 and larger) %>
+-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+-  <link rel="apple-touch-icon" sizes="512x512" href="/logo-pwa.png">
+-  <link rel="icon" sizes="192x192" type="image/png" href="/android-chrome-192x192.png">
++  <link rel="apple-touch-icon" href="<%= File.join(root_path, "apple-touch-icon.png") %>">
++  <link rel="apple-touch-icon" sizes="180x180" href="<%= File.join(root_path, "apple-touch-icon.png") %>">
++  <link rel="apple-touch-icon" sizes="512x512" href="<%= File.join(root_path, "logo-pwa.png") %>">
++  <link rel="icon" sizes="192x192" type="image/png" href="<%= File.join(root_path, "android-chrome-192x192.png") %>">
+ 
+   <% if Rails.env.production? && (posthog_config = Rails.configuration.x.posthog).try(:api_key).present? %>
+     <%= render "shared/posthog", posthog_api_key: posthog_config.api_key, posthog_host: posthog_config.host %>
+diff --git a/app/views/pwa/manifest.json.erb b/app/views/pwa/manifest.json.erb
+index 820c221..5f212ae 100644
+--- a/app/views/pwa/manifest.json.erb
++++ b/app/views/pwa/manifest.json.erb
+@@ -3,26 +3,26 @@
+   "short_name": "<%= j product_name %>",
+   "icons": [
+     {
+-      "src": "/android-chrome-192x192.png",
++      "src": "<%= j File.join(root_path, "android-chrome-192x192.png") %>",
+       "type": "image/png",
+       "sizes": "192x192"
+     },
+     {
+-      "src": "/logo-pwa.png",
++      "src": "<%= j File.join(root_path, "logo-pwa.png") %>",
+       "type": "image/png",
+       "sizes": "512x512"
+     },
+     {
+-      "src": "/logo-pwa.png",
++      "src": "<%= j File.join(root_path, "logo-pwa.png") %>",
+       "type": "image/png",
+       "sizes": "512x512",
+       "purpose": "maskable"
+     }
+   ],
+-  "start_url": "/",
++  "start_url": "<%= j root_path %>",
+   "display": "standalone",
+   "display_override": ["window-controls-overlay", "minimal-ui"],
+-  "scope": "/",
++  "scope": "<%= j root_path %>",
+   "orientation": "any",
+   "description": "<%= j product_name %> is your personal finance assistant.",
+   "theme_color": "#F9F9F9",
+diff --git a/app/views/pwa/service-worker.js b/app/views/pwa/service-worker.js
+index 4108a20..e6b35ce 100644
+--- a/app/views/pwa/service-worker.js
++++ b/app/views/pwa/service-worker.js
+@@ -1,8 +1,12 @@
+ const CACHE_VERSION = 'v1';
++// Resolve against this script's own URL rather than the domain root, so the app
++// works when mounted under a sub-path (RAILS_RELATIVE_URL_ROOT): the worker is
++// served at <prefix>/service-worker, so 'offline.html' becomes <prefix>/offline.html.
++// Identical to the old root-absolute paths when the prefix is empty.
+ const OFFLINE_ASSETS = [
+-  '/offline.html',
+-  '/logo-offline.svg'
+-];
++  'offline.html',
++  'logo-offline.svg'
++].map((asset) => new URL(asset, self.location).pathname);
+ 
+ // Install event - cache the offline page and assets
+ self.addEventListener('install', (event) => {
+@@ -41,7 +45,7 @@ self.addEventListener('fetch', (event) => {
+       fetch(event.request).catch((error) => {
+         // Only show offline page for network errors
+         if (error.name === 'TypeError' || !navigator.onLine) {
+-          return caches.match('/offline.html');
++          return caches.match(OFFLINE_ASSETS[0]);
+         }
+         throw error;
+       })
