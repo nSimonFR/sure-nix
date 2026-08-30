@@ -123,6 +123,29 @@ let
       file    = ./patches/base/pwa-relative-url-root.patch;
       default = true;
     };
+    # Refresh already-stored Lunchflow transactions instead of freezing them.
+    # LunchflowItem::Importer keeps only ids it has never seen ("we treat them as
+    # immutable snapshots"), so every later bank correction to amount, date or
+    # isPending is discarded — and since the entry is deep-merged from that stored
+    # payload on every sync, the stale values are re-applied forever. Lunchflow
+    # ids are stable across pending→posted, so an id already held is the same
+    # transaction and can be refreshed in place.
+    "lunchflow-refresh-stored-transactions" = {
+      file    = ./patches/base/lunchflow-refresh-stored-transactions.patch;
+      default = true;
+    };
+    # Stop the pending→posted auto-claim from merging unrelated transactions.
+    # find_pending_transaction matches on amount + currency + an 8-day window,
+    # compares neither merchant nor name, then takes the most recent candidate —
+    # and the claim is destructive (the posted transaction inherits the pending
+    # row's date and merchant). Adds an ambiguity guard and a merchant
+    # *contradiction* guard; deliberately does not require positive name/merchant
+    # agreement, which would break providers that format pending and booked
+    # descriptions differently.
+    "pending-claim-ambiguity-guards" = {
+      file    = ./patches/base/pending-claim-ambiguity-guards.patch;
+      default = true;
+    };
     # Skip transfer-kind transactions in AI auto-categorization, so internal
     # transfers (funds_movement, etc.) are never mislabeled by the LLM. Sure's
     # own model already treats transfers as non-categorizable. Off by default.
