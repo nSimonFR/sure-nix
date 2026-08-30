@@ -1,0 +1,95 @@
+Refresh already-stored Lunchflow transactions instead of freezing them.
+
+LunchflowItem::Importer filtered the incoming payload down to ids it had never
+seen, stating the intent outright: "we treat them as immutable snapshots". First
+write wins forever — every later correction the bank makes to amount, date or
+isPending is discarded. Because the entry is deep-merged from this stored payload
+on every sync, the stale values are then re-applied indefinitely, so an entry can
+never self-heal and a wrong pending flag stays wrong forever.
+
+That is not a cosmetic problem. A stale pending row is the candidate set for
+Account::ProviderImportAdapter#find_pending_transaction, whose claim is
+destructive; observed in production, a payload held 196 pending rows (oldest
+dated 2020) while the provider reported 12, and an amount frozen mid-authorisation
+at -39.96 against -41.17 actually charged.
+
+Lunchflow transaction ids are stable across the pending→posted transition —
+verified against a live provider, where 159 transactions stored while pending are
+now returned settled under the same id, with zero id changes. So an id already
+held identifies the same transaction and can be refreshed in place.
+
+Merges rather than replaces, so keys the provider stops returning are preserved.
+Rows aged out of the provider's response window are untouched, since only ids
+present in the incoming payload are refreshed. Blank-id rows are keyed by content
+hash and keep the existing dedupe path. User edits remain protected downstream by
+protected_from_sync?.
+
+diff --git a/app/models/lunchflow_item/importer.rb b/app/models/lunchflow_item/importer.rb
+index 0a60039..130f60a 100644
+--- a/app/models/lunchflow_item/importer.rb
++++ b/app/models/lunchflow_item/importer.rb
+@@ -295,10 +295,47 @@ class LunchflowItem::Importer
+               end
+             end.compact.to_set
+ 
++            # Refresh already-stored transactions from the incoming payload.
++            #
++            # Lunchflow transaction ids are stable across the pending→posted
++            # transition, so an id we already hold identifies the *same*
++            # transaction — the upstream copy is simply more current. Treating
++            # stored rows as immutable snapshots discards every later correction
++            # the bank makes to amount, date or pending status, and because the
++            # entry is deep-merged from this payload on every sync, the stale
++            # values are re-applied indefinitely: an entry can never self-heal,
++            # and a pending flag that is wrong stays wrong forever.
++            #
++            # Only ids are refreshed. Blank-id rows are keyed by content hash, so
++            # a change in their content makes them a different row by definition
++            # and there is nothing to refresh in place.
++            incoming_by_id = {}
++            transactions_data[:transactions].each do |tx|
++              next unless tx.is_a?(Hash)
++
++              tx_id = tx.with_indifferent_access[:id]
++              incoming_by_id[tx_id] = tx if tx_id.present?
++            end
++
++            refreshed_count = 0
++            refreshed_transactions = existing_transactions.map do |tx|
++              tx_with_access = tx.with_indifferent_access
++              tx_id = tx_with_access[:id]
++              incoming = tx_id.present? ? incoming_by_id[tx_id] : nil
++              next tx if incoming.nil?
++
++              # Merge rather than replace so keys the provider has stopped
++              # returning are preserved instead of being dropped.
++              merged = tx_with_access.merge(incoming.with_indifferent_access)
++              next tx if merged == tx_with_access
++
++              refreshed_count += 1
++              merged
++            end
++
+             # Filter to ONLY truly new transactions (skip duplicates)
+             # For transactions WITH IDs: skip if ID already exists (true duplicates)
+             # For transactions WITHOUT IDs: skip if content hash exists (prevents unbounded growth)
+-            # Note: Pending transactions may update from pending→posted, but we treat them as immutable snapshots
+             new_transactions = transactions_data[:transactions].select do |tx|
+               next false unless tx.is_a?(Hash)
+ 
+@@ -315,11 +352,11 @@ class LunchflowItem::Importer
+               end
+             end
+ 
+-            if new_transactions.any?
+-              Rails.logger.info "LunchflowItem::Importer - Storing #{new_transactions.count} new transactions (#{existing_transactions.count} existing, #{transactions_data[:transactions].count - new_transactions.count} duplicates skipped) for account #{lunchflow_account.account_id}"
+-              lunchflow_account.upsert_lunchflow_transactions_snapshot!(existing_transactions + new_transactions)
++            if new_transactions.any? || refreshed_count.positive?
++              Rails.logger.info "LunchflowItem::Importer - Storing #{new_transactions.count} new transactions, refreshing #{refreshed_count} existing (#{existing_transactions.count} existing, #{transactions_data[:transactions].count - new_transactions.count} already stored) for account #{lunchflow_account.account_id}"
++              lunchflow_account.upsert_lunchflow_transactions_snapshot!(refreshed_transactions + new_transactions)
+             else
+-              Rails.logger.info "LunchflowItem::Importer - No new transactions to store (all #{transactions_data[:transactions].count} were duplicates) for account #{lunchflow_account.account_id}"
++              Rails.logger.info "LunchflowItem::Importer - No new transactions to store and none changed (all #{transactions_data[:transactions].count} were duplicates) for account #{lunchflow_account.account_id}"
+             end
+           rescue => e
+             Rails.logger.error "LunchflowItem::Importer - Failed to store transactions for account #{lunchflow_account.account_id}: #{e.message}"
