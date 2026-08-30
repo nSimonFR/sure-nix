@@ -1,0 +1,105 @@
+Stop the pending auto-claim from silently merging unrelated transactions.
+
+Account::ProviderImportAdapter#find_pending_transaction reconciles pending→posted
+by matching amount + currency inside an 8-day window, then takes
+.order(date: :desc).first. It compares neither merchant nor name, and the claim is
+destructive: the posted transaction is welded onto the pending entry, which keeps
+its date and merchant. Two same-amount transactions a few days apart are therefore
+silently merged into one row that belongs to neither.
+
+Observed in production: a 52 EUR charge on the 21st claimed an unrelated 52 EUR
+pending row from the 14th, producing an entry with the first merchant's name and
+the second's date and merchant_id.
+
+The risk model is inverted. The two paths that only ever *suggest* a match
+(find_pending_transaction_fuzzy, find_pending_transaction_low_confidence) both use
+a tighter window, require merchant or name evidence, and refuse when ambiguous.
+The one path that rewrites data has the widest window and no identity check at all.
+
+Adds two guards to the destructive path, and deliberately does NOT require positive
+identity agreement:
+
+  1. Ambiguity — refuse when more than one candidate matches, rather than picking
+     the most recent on an amount match alone.
+  2. Merchant contradiction — refuse when both sides resolved a merchant and those
+     merchants disagree. A negative test, so it stays inert where the pending row
+     carries no merchant.
+
+Requiring positive merchant/name agreement was considered and rejected: providers
+legitimately format pending and booked descriptions differently (Enable Banking
+sends "PAIEMENT CARTE DU 20/08 15:14 MAISON DE OC" then "CARTE X0571 20/08 MAISON
+DE OCEAN"), which is why this method does not compare names. Audited against 61
+production auto-claims on such a provider, all legitimate, none of which either
+guard rejects.
+
+Narrowing date_window was also considered and rejected as an arbitrary threshold
+that moves the boundary without addressing the missing identity check.
+
+diff --git a/app/models/account/provider_import_adapter.rb b/app/models/account/provider_import_adapter.rb
+index 0e3a479..7efafe6 100644
+--- a/app/models/account/provider_import_adapter.rb
++++ b/app/models/account/provider_import_adapter.rb
+@@ -115,7 +115,7 @@ class Account::ProviderImportAdapter
+         # PRIORITY 2: Fallback to EXACT amount match (for SimpleFIN and providers without linking IDs)
+         # Only searches backward in time - pending date must be <= posted date
+         if pending_match.nil?
+-          pending_match = find_pending_transaction(date: date, amount: amount, currency: currency, source: source)
++          pending_match = find_pending_transaction(date: date, amount: amount, currency: currency, source: source, merchant_id: merchant&.id)
+           if pending_match
+             Rails.logger.info("Reconciling pending→posted via exact amount match: claiming entry #{pending_match.id} (#{pending_match.name}) with new external_id #{external_id}")
+           end
+@@ -752,9 +752,10 @@ class Account::ProviderImportAdapter
+   # @param amount [BigDecimal, Numeric] Transaction amount (must match exactly)
+   # @param currency [String] Currency code
+   # @param source [String] Provider name (e.g., "simplefin")
++  # @param merchant_id [String, nil] Merchant of the posted transaction, when resolved
+   # @param date_window [Integer] Days to search around the posted date (default: 8)
+   # @return [Entry, nil] The pending entry or nil if not found
+-  def find_pending_transaction(date:, amount:, currency:, source:, date_window: 8)
++  def find_pending_transaction(date:, amount:, currency:, source:, merchant_id: nil, date_window: 8)
+     date = Date.parse(date.to_s) unless date.is_a?(Date)
+ 
+     # Look for entries that:
+@@ -782,8 +783,41 @@ class Account::ProviderImportAdapter
+         OR (transactions.extra -> 'redbark' ->> 'pending')::boolean = true
+       SQL
+       .order(date: :desc) # Prefer most recent pending transaction
++      .to_a
++
++    return nil if candidates.empty?
++
++    # Ambiguity guard.
++    #
++    # This claim is destructive: the posted transaction is welded onto the
++    # pending entry, which keeps its date and merchant. Picking "the most
++    # recent of several" on an amount match alone is a coin flip, and when it
++    # loses, two unrelated transactions are silently merged into one row.
++    # Upstream's fuzzy matcher already refuses to guess in this situation even
++    # though it only ever *suggests*; the destructive path should be at least
++    # as careful.
++    if candidates.size > 1
++      Rails.logger.info("Skipping pending auto-claim: #{candidates.size} ambiguous candidates for amount=#{amount} currency=#{currency} date=#{date}")
++      return nil
++    end
++
++    candidate = candidates.first
++
++    # Merchant contradiction guard.
++    #
++    # Deliberately a NEGATIVE test: refuse only when both sides resolved a
++    # merchant and those merchants disagree. Requiring positive agreement would
++    # break every provider that formats the pending and booked descriptions
++    # differently (Enable Banking's raw bank strings in particular, where the
++    # pending row usually carries no merchant at all) — which is exactly why
++    # this method does not compare names.
++    candidate_merchant_id = candidate.transaction&.merchant_id
++    if merchant_id.present? && candidate_merchant_id.present? && candidate_merchant_id != merchant_id
++      Rails.logger.info("Skipping pending auto-claim: merchant mismatch (pending entry #{candidate.id} merchant #{candidate_merchant_id} vs posted merchant #{merchant_id}) for amount=#{amount} date=#{date}")
++      return nil
++    end
+ 
+-    candidates.first
++    candidate
+   end
+ 
+   # Finds a pending transaction using fuzzy amount matching for tip adjustments
