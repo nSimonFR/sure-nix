@@ -146,6 +146,21 @@ let
       file    = ./patches/base/pending-claim-ambiguity-guards.patch;
       default = true;
     };
+    # Give AutoCategorizeJob its own Sidekiq queue so AI categorization cannot
+    # starve behind merchant detection. Upstream puts both on `medium_priority`,
+    # which is strict FIFO, and every rule run enqueues merchant jobs first — so
+    # one full-history run (~9,800 transactions => 691 AutoDetectMerchantsJob,
+    # each a ~40s LLM call) buries every AutoCategorizeJob behind hours of work
+    # that must complete first. Observed 2026-09-02: 219 categorize jobs sat 88
+    # merchant jobs deep and none ran for 8 days, while merchant enrichment kept
+    # working — categories simply stopped, silently. Acute on a socket-activated
+    # deployment where the worker lives minutes a day, but the starvation is
+    # upstream's queue design, not the idle policy. `categorize` is weighted 3,
+    # above medium_priority's 2 and below high_priority's 4, so syncs still win.
+    "categorize-dedicated-queue" = {
+      file    = ./patches/base/categorize-dedicated-queue.patch;
+      default = true;
+    };
     # Skip transfer-kind transactions in AI auto-categorization, so internal
     # transfers (funds_movement, etc.) are never mislabeled by the LLM. Sure's
     # own model already treats transfers as non-categorizable. Off by default.

@@ -1,0 +1,23 @@
+diff --git a/app/jobs/auto_categorize_job.rb b/app/jobs/auto_categorize_job.rb
+index f168351..73590ab 100644
+--- a/app/jobs/auto_categorize_job.rb
++++ b/app/jobs/auto_categorize_job.rb
+@@ -1,5 +1,5 @@
+ class AutoCategorizeJob < ApplicationJob
+-  queue_as :medium_priority
++  queue_as :categorize
+ 
+   def perform(family, transaction_ids: [], rule_run_id: nil)
+     modified_count = family.auto_categorize_transactions(transaction_ids)
+diff --git a/config/sidekiq.yml b/config/sidekiq.yml
+index 4fce6f0..e802055 100644
+--- a/config/sidekiq.yml
++++ b/config/sidekiq.yml
+@@ -2,6 +2,7 @@ concurrency: <%= ENV.fetch("RAILS_MAX_THREADS") { 3 } %>
+ queues:
+   - [scheduled, 10] # For cron-like jobs (e.g. "daily market data sync")
+   - [high_priority, 4]
++  - [categorize, 3] # AI auto-categorization: own queue so it never queues behind AutoDetectMerchantsJob
+   - [medium_priority, 2]
+   - [low_priority, 1]
+   - [default, 1]
