@@ -35,7 +35,7 @@
 let
   ruby = ruby_3_4;
   pname = "sure";
-  version = "0.7.3";
+  version = "0.7.5";
 
   # tailwindcss-ruby (source gem) ships no binary; it looks for the Tailwind CLI
   # in its exe/ dir, falling back to TAILWINDCSS_INSTALL_DIR.  Fetch the matching
