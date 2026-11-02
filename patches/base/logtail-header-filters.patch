@@ -1,0 +1,17 @@
+diff --git a/config/initializers/logtail_header_filters.rb b/config/initializers/logtail_header_filters.rb
+new file mode 100644
+--- /dev/null
++++ b/config/initializers/logtail_header_filters.rb
+@@ -0,0 +1,12 @@
++# logtail-rack logs every request's and response's headers (headers_json);
++# mask the ones that carry credentials. Matching is case- and dash-insensitive.
++if defined?(Logtail::Integrations::Rack::HTTPEvents)
++  Logtail::Integrations::Rack::HTTPEvents.http_header_filters = %w[
++    Authorization
++    Proxy-Authorization
++    Cookie
++    Set-Cookie
++    X-Api-Key
++    X-Csrf-Token
++  ]
++end

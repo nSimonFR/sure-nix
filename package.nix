@@ -146,6 +146,13 @@ let
       file    = ./patches/base/pending-claim-ambiguity-guards.patch;
       default = true;
     };
+    # Mask credential headers in logtail-rack's request/response events. By
+    # default it logs every header, so the journal held the browser's Cookie
+    # (every app's session on the same host), Authorization and X-Api-Key.
+    "logtail-header-filters" = {
+      file    = ./patches/base/logtail-header-filters.patch;
+      default = true;
+    };
     # Skip transfer-kind transactions in AI auto-categorization, so internal
     # transfers (funds_movement, etc.) are never mislabeled by the LLM. Sure's
     # own model already treats transfers as non-categorizable. Off by default.
