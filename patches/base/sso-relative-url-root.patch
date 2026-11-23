@@ -1,0 +1,44 @@
+Make the SSO entry points honor the mount path (SCRIPT_NAME).
+
+Under sub-path hosting (sure-nix mounts the app at RAILS_RELATIVE_URL_ROOT via
+Rack::URLMap), the SSO button, the mobile SSO auto-submit form and OmniAuth's
+failure redirect use root-absolute "/auth/..." paths. They leave the app and
+404 (e.g. https://host/auth/openid_connect instead of /sure/auth/...).
+Prefix them with request.script_name / env["SCRIPT_NAME"]: empty at the root,
+so this is the identity without a sub-path.
+
+diff --git a/app/views/sessions/mobile_sso_start.html.erb b/app/views/sessions/mobile_sso_start.html.erb
+--- a/app/views/sessions/mobile_sso_start.html.erb
++++ b/app/views/sessions/mobile_sso_start.html.erb
+@@ -1,6 +1,6 @@
+ <!DOCTYPE html>
+ <html><body>
+-  <form id="sso_form" action="/auth/<%= ERB::Util.html_escape(@provider) %>" method="post">
++  <form id="sso_form" action="<%= ERB::Util.html_escape(request.script_name) %>/auth/<%= ERB::Util.html_escape(@provider) %>" method="post">
+     <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+   </form>
+   <script>document.getElementById('sso_form').submit();</script>
+diff --git a/app/views/sessions/new.html.erb b/app/views/sessions/new.html.erb
+--- a/app/views/sessions/new.html.erb
++++ b/app/views/sessions/new.html.erb
+@@ -65,7 +65,7 @@
+         wording (brand-compliant) via the custom-icon asset, so no bespoke CSS.
+       %>
+       <%= render DS::Button.new(
+-            href: "/auth/#{provider_name}",
++            href: "#{request.script_name}/auth/#{provider_name}",
+             method: :post,
+             variant: :outline,
+             size: :md,
+diff --git a/config/initializers/omniauth.rb b/config/initializers/omniauth.rb
+--- a/config/initializers/omniauth.rb
++++ b/config/initializers/omniauth.rb
+@@ -24,7 +24,7 @@
+     "sso_failed"
+   end
+ 
+-  Rack::Response.new([ "302 Moved" ], 302, "Location" => "/auth/failure?message=#{message}&strategy=#{strategy&.name}").finish
++  Rack::Response.new([ "302 Moved" ], 302, "Location" => "#{env["SCRIPT_NAME"]}/auth/failure?message=#{message}&strategy=#{strategy&.name}").finish
+ end
+ 
+ Rails.application.config.middleware.use OmniAuth::Builder do
