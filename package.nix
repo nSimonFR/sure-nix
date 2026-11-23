@@ -123,6 +123,13 @@ let
       file    = ./patches/base/pwa-relative-url-root.patch;
       default = true;
     };
+    # The SSO button, the mobile SSO form and OmniAuth's failure redirect post to
+    # root-absolute "/auth/..." and 404 under the /sure sub-path; prefix them
+    # with SCRIPT_NAME. Identity when mounted at the root.
+    "sso-relative-url-root" = {
+      file    = ./patches/base/sso-relative-url-root.patch;
+      default = true;
+    };
     # Refresh already-stored Lunchflow transactions instead of freezing them.
     # LunchflowItem::Importer keeps only ids it has never seen ("we treat them as
     # immutable snapshots"), so every later bank correction to amount, date or
