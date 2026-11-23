@@ -1,35 +1,51 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended"
+  ],
   "nix": {
     "enabled": true
   },
-  "enabledManagers": ["custom.regex", "nix"],
+  "enabledManagers": [
+    "custom.regex",
+    "nix"
+  ],
   "customManagers": [
     {
-      "description": "Track Sure upstream releases in package.nix",
+      "description": "Track Sure upstream releases in package.nix Upstream ships fixes as vX.Y.Z-hotfix.N (real releases); plain semver reads the suffix as a pre-release and skips them, so a regex versioning ranks hotfix.N as build N. Nightly YYYY.MM.DD-alpha tags don't match and stay ignored.",
       "customType": "regex",
-      "managerFilePatterns": ["/^package\\.nix$/"],
+      "managerFilePatterns": [
+        "/^package\\.nix$/"
+      ],
       "matchStrings": [
         "version\\s*=\\s*\"(?<currentValue>[^\"]+)\";"
       ],
       "depNameTemplate": "we-promise/sure",
       "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v?(?<version>.*)$"
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:-hotfix\\.(?<build>\\d+))?$"
     }
   ],
   "packageRules": [
     {
       "description": "Group flake input updates",
-      "matchManagers": ["nix"],
+      "matchManagers": [
+        "nix"
+      ],
       "groupName": "flake inputs",
-      "schedule": ["every weekend"]
+      "schedule": [
+        "every weekend"
+      ]
     },
     {
-      "description": "Sure upstream releases — regenerate gemset after version bump",
-      "matchDepNames": ["we-promise/sure"],
+      "description": "Sure upstream releases \u2014 regenerate gemset after version bump",
+      "matchDepNames": [
+        "we-promise/sure"
+      ],
       "automerge": false,
-      "schedule": ["at any time"],
+      "schedule": [
+        "at any time"
+      ],
       "postUpgradeTasks": {
         "commands": [
           "bash scripts/update-gemset.sh {{newVersion}}",
